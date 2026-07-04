@@ -1,4 +1,4 @@
-CC ?= gcc
+CC = gcc
 CFLAGS ?= -Wall -Werror -Wextra -pedantic -std=c11 -O2 -g
 CPPFLAGS ?= -Iinclude
 SRC_LIB = src/parser.c src/patcher.c src/differ.c src/resolver.c src/compressor.c src/registry.c src/crc32.c
