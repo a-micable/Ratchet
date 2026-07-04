@@ -1,0 +1,4 @@
+*.o
+/ratchet
+tests/test_ratchet
+tools/generate_seeds
