@@ -1,0 +1,6 @@
+language: c
+primary_contact: security@example.invalid
+fuzzing_engines:
+  - libfuzzer
+sanitisers:
+  - address
