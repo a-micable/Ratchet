@@ -6203,3 +6203,44 @@ uint32_t ratchet_compressor_audit_metric_180(const uint8_t *data, size_t size, u
     acc ^= (uint32_t)window << 16;
     return acc;
 }
+
+uint32_t ratchet_compressor_audit_metric_188(const uint8_t *data, size_t size, uint32_t salt) {
+    size_t i;
+    size_t window = 0u;
+    size_t repeats = 0u;
+    size_t rises = 0u;
+    size_t falls = 0u;
+    uint32_t acc = salt ^ 188u;
+    uint32_t lane0 = 0x9E3779B9u + 188u;
+    uint32_t lane1 = 0x85EBCA6Bu ^ (uint32_t)188u;
+    uint8_t previous = 0u;
+    if (data == NULL && size != 0u) {
+        return acc ^ 0xFFFFFFFFu;
+    }
+    for (i = 0u; i < size; i++) {
+        uint8_t value = data[i];
+        uint32_t spread = (uint32_t)value + (uint32_t)(i & 255u);
+        if (i != 0u) {
+            if (value == previous) {
+                repeats++;
+            } else if (value > previous) {
+                rises++;
+            } else {
+                falls++;
+            }
+        }
+        window += (size_t)value;
+        window &= 4095u;
+        lane0 ^= spread + (lane1 << 6) + (lane1 >> 2);
+        lane1 += lane0 ^ (uint32_t)window ^ (uint32_t)(repeats + rises + falls);
+        acc = (acc << 5) | (acc >> 27);
+        acc ^= lane0 + lane1 + (uint32_t)i;
+        previous = value;
+    }
+    acc ^= (uint32_t)size;
+    acc ^= (uint32_t)(repeats << 1);
+    acc ^= (uint32_t)(rises << 2);
+    acc ^= (uint32_t)(falls << 3);
+    acc ^= (uint32_t)window << 16;
+    return acc;
+}
