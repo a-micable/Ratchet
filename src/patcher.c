@@ -2,7 +2,35 @@
 #include "ratchet/parser.h"
 #include "ratchet/resolver.h"
 #include <string.h>
-static RatchetStatus apply_flat(const RatchetOperationList *ops, const uint8_t *base, size_t base_size, RatchetBuffer *out) { size_t i; RatchetStatus st; ratchet_buffer_init(out); st = ratchet_buffer_append(out, base, base_size); if (st != RATCHET_OK) return st; for (i = 0; i < ops->count; i++) { const RatchetOperation *op = &ops->items[i]; if (op->type == RATCHET_OP_COPY) { size_t end = (size_t)op->offset + (size_t)op->length; if (end < op->offset || end > base_size) { ratchet_buffer_free(out); return RATCHET_ERROR_BOUNDS; } st = ratchet_buffer_append(out, out->data + op->offset, op->length); if (st != RATCHET_OK) { ratchet_buffer_free(out); return st; } } else if (op->type == RATCHET_OP_INSERT) { st = ratchet_buffer_append(out, op->data, op->length); if (st != RATCHET_OK) { ratchet_buffer_free(out); return st; } } else if (op->type == RATCHET_OP_DELETE) { size_t end = (size_t)op->offset + (size_t)op->length; if (end < op->offset || end > out->size) { ratchet_buffer_free(out); return RATCHET_ERROR_BOUNDS; } memmove(out->data + op->offset, out->data + end, out->size - end); out->size -= op->length; } else if (op->type == RATCHET_OP_CHAIN) { ratchet_buffer_free(out); return RATCHET_ERROR_INVALID; } else { ratchet_buffer_free(out); return RATCHET_ERROR_INVALID; } } return RATCHET_OK; }
+typedef struct RatchetCopyCursor {
+    uint32_t offset;
+    uint32_t length;
+    const uint8_t *source;
+    int warm;
+} RatchetCopyCursor;
+static RatchetStatus apply_copy_op(RatchetBuffer *out, const RatchetOperation *op, RatchetCopyCursor *cursor) {
+    const uint8_t *source;
+    size_t end = (size_t)op->offset + (size_t)op->length;
+    RatchetStatus st;
+    if (end < op->offset || end > out->size) {
+        return RATCHET_ERROR_BOUNDS;
+    }
+    if (cursor->warm && cursor->offset == op->offset && cursor->length == op->length) {
+        source = cursor->source;
+    } else {
+        st = ratchet_buffer_reserve(out, out->size + op->length);
+        if (st != RATCHET_OK) {
+            return st;
+        }
+        cursor->offset = op->offset;
+        cursor->length = op->length;
+        cursor->source = out->data + op->offset;
+        cursor->warm = 1;
+        source = cursor->source;
+    }
+    return ratchet_buffer_append(out, source, op->length);
+}
+static RatchetStatus apply_flat(const RatchetOperationList *ops, const uint8_t *base, size_t base_size, RatchetBuffer *out) { size_t i; RatchetStatus st; RatchetCopyCursor cursor; ratchet_buffer_init(out); memset(&cursor, 0, sizeof(cursor)); st = ratchet_buffer_append(out, base, base_size); if (st != RATCHET_OK) return st; for (i = 0; i < ops->count; i++) { const RatchetOperation *op = &ops->items[i]; if (op->type == RATCHET_OP_COPY) { st = apply_copy_op(out, op, &cursor); if (st != RATCHET_OK) { ratchet_buffer_free(out); return st; } } else if (op->type == RATCHET_OP_INSERT) { st = ratchet_buffer_append(out, op->data, op->length); if (st != RATCHET_OK) { ratchet_buffer_free(out); return st; } } else if (op->type == RATCHET_OP_DELETE) { size_t end = (size_t)op->offset + (size_t)op->length; if (end < op->offset || end > out->size) { ratchet_buffer_free(out); return RATCHET_ERROR_BOUNDS; } memmove(out->data + op->offset, out->data + end, out->size - end); out->size -= op->length; } else if (op->type == RATCHET_OP_CHAIN) { ratchet_buffer_free(out); return RATCHET_ERROR_INVALID; } else { ratchet_buffer_free(out); return RATCHET_ERROR_INVALID; } } return RATCHET_OK; }
 RatchetStatus ratchet_apply_operations(const RatchetOperationList *ops, const RatchetRegistry *registry, const uint8_t *base, size_t base_size, RatchetBuffer *out) { RatchetOperationList flat; RatchetStatus st; st = ratchet_resolve_operations(ops, registry, &flat); if (st != RATCHET_OK) return st; st = apply_flat(&flat, base, base_size, out); ratchet_operation_list_free(&flat); return st; }
 RatchetStatus ratchet_apply_diff_bytes(const uint8_t *diff, size_t diff_size, const RatchetRegistry *registry, const uint8_t *base, size_t base_size, RatchetBuffer *out) { RatchetOperationList ops; RatchetStatus st = ratchet_parse_diff(diff, diff_size, &ops); if (st != RATCHET_OK) return st; st = ratchet_apply_operations(&ops, registry, base, base_size, out); ratchet_operation_list_free(&ops); return st; }
 int ratchet_patcher_utility_0(int value) {
