@@ -1,6 +1,6 @@
-language: c
+language: jvm
 primary_contact: security@example.invalid
 fuzzing_engines:
   - libfuzzer
-sanitisers:
+sanitizers:
   - address
