@@ -1,0 +1,19 @@
+package ratchet;
+
+public enum RatchetStatus {
+    OK,
+    INVALID,
+    CRC,
+    BOUNDS,
+    NOT_FOUND,
+    DEPTH,
+    COMPRESSION_ERROR,
+    SIZE_EXCEEDED,
+    UNSUPPORTED,
+    INTERNAL,
+    IO_ERROR,
+    AUTHENTICATION_FAILED,
+    AUTHORIZATION_FAILED,
+    TIMEOUT,
+    CONCURRENT_MODIFICATION
+}

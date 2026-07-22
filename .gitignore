@@ -1,0 +1,5 @@
+.knotwork.git/
+build/
+/ratchet
+*.class
+*.jar
