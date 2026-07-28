@@ -35,7 +35,7 @@ All integers are little-endian 32-bit values.
 - `Resolver`: recursively expands chain operations into flat ordered patch operations.
 - `Patcher`: applies copy, insert, and delete operations to a working buffer after resolver flattening.
 - `StatefulPatchSession`: keeps an evolving current document, named registry entries, checkpoints, and version metadata across multiple patch calls.
-- `Differ`: deterministic greedy diff generator using longest base substring matches.
+- `Differ`: deterministic greedy diff generator backed by a byte suffix automaton for exact longest base substring matches.
 - `Compressor`: run-length and 4-byte back-reference compressor for insert literals.
 - `RatchetCli`: local command line interface.
 - `RatchetFuzzer`: JVM fuzz harness that either parses raw diffs or interprets command streams that mutate a long-lived patch session.
@@ -73,7 +73,7 @@ Expected output:
 Java Ratchet tests passed
 ```
 
-Tests cover round trips, CRC rejection, copy/insert/delete operations, mixed operation sequences, version chains, compression, registry behavior, and writer/parser round trips.
+Tests cover round trips, CRC rejection, copy/insert/delete operations, mixed operation sequences, moved-block diff reuse, ambiguous repeated-prefix matching, version chains, compression, registry behavior, and writer/parser round trips.
 
 ## Seeds
 
@@ -81,7 +81,7 @@ Tests cover round trips, CRC rejection, copy/insert/delete operations, mixed ope
 make seeds
 ```
 
-Seed corpus includes insert-only, copy-only, mixed sequence, one-level chain, two-level chain, and command-stream stateful session examples. Mixed sequence seeds are intentionally stateful: they warm copy state, mutate working state, grow storage, then repeat copy.
+Seed corpus includes insert-only, copy-only, moved-block diff, mixed sequence, one-level chain, two-level chain, and command-stream stateful session examples. Mixed sequence seeds are intentionally stateful: they warm copy state, mutate working state, grow storage, then repeat copy.
 
 ## Fuzz Harness
 

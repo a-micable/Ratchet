@@ -11,7 +11,7 @@ import java.util.Map;
  */
 public final class StatefulPatchSession {
     private final Registry registry = new Registry();
-    private final Map<String, byte[]> checkpoints = new HashMap<String, byte[]>();
+    private final Map<String, Snapshot> checkpoints = new HashMap<String, Snapshot>();
     private byte[] current;
     private String currentVersion;
     private int appliedCount;
@@ -61,15 +61,17 @@ public final class StatefulPatchSession {
     }
 
     public void checkpoint(String name) {
-        checkpoints.put(sanitizeVersion(name), copy(current));
+        checkpoints.put(sanitizeVersion(name), new Snapshot(current, currentVersion, appliedCount));
     }
 
     public void restore(String name) throws RatchetException {
-        byte[] snapshot = checkpoints.get(sanitizeVersion(name));
+        Snapshot snapshot = checkpoints.get(sanitizeVersion(name));
         if (snapshot == null) {
             throw new RatchetException(RatchetStatus.NOT_FOUND, "checkpoint not found");
         }
-        current = copy(snapshot);
+        current = copy(snapshot.current);
+        currentVersion = snapshot.version;
+        appliedCount = snapshot.appliedCount;
     }
 
     public void reset(byte[] base, String version) {
@@ -93,5 +95,17 @@ public final class StatefulPatchSession {
             return version;
         }
         return version.substring(0, Format.NAME_MAX);
+    }
+
+    private static final class Snapshot {
+        final byte[] current;
+        final String version;
+        final int appliedCount;
+
+        Snapshot(byte[] current, String version, int appliedCount) {
+            this.current = copy(current);
+            this.version = version;
+            this.appliedCount = appliedCount;
+        }
     }
 }

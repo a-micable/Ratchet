@@ -18,11 +18,14 @@ public final class RatchetTest {
         testChainTwo();
         testIdentical();
         testNoCommon();
+        testMovedBlocksUseCopies();
+        testLongAmbiguousPrefixRoundTrip();
         testCompressor();
         testRegistryMissing();
         testWriteParse();
         testStatefulSession();
         testStatefulDefensiveCopies();
+        testStatefulRestoreMetadata();
         if (failures != 0) {
             throw new AssertionError(failures + " failures");
         }
@@ -54,6 +57,34 @@ public final class RatchetTest {
     private static void testChainTwo() throws Exception { OperationList one = new OperationList(); one.add(Operation.insert(bytes("D"))); OperationList two = new OperationList(); two.add(Operation.chain("v1")); two.add(Operation.insert(bytes("E"))); OperationList root = new OperationList(); root.add(Operation.chain("v2")); Registry registry = new Registry(); registry.put("v1", Parser.write(one)); registry.put("v2", Parser.write(two)); byte[] out = Patcher.apply(root, registry, bytes("abc")); check(out.length == 5, "chain two"); }
     private static void testIdentical() throws Exception { OperationList ops = Differ.diff(bytes("same same"), bytes("same same"), "b", "t"); check(ops.size() == 2 && ops.get(0).type() == OperationType.COPY, "identical"); }
     private static void testNoCommon() throws Exception { OperationList ops = Differ.diff(bytes("abcd"), bytes("WXYZ"), "b", "t"); check(ops.size() == 2 && ops.get(0).type() == OperationType.INSERT, "no common"); }
+    private static void testMovedBlocksUseCopies() throws Exception {
+        byte[] alpha = bytes(repeat("alpha-14142135623730950488-", 8));
+        byte[] beta = bytes(repeat("beta-27182818284590452353-", 7));
+        byte[] gamma = bytes(repeat("gamma-16180339887498948482-", 6));
+        byte[] base = concat(alpha, beta, gamma);
+        byte[] target = concat(gamma, bytes("::x::"), alpha, bytes("::y::"), beta);
+        OperationList ops = Differ.diff(base, target, "base", "target");
+        int copyCount = 0;
+        int copied = 0;
+        for (Operation op : ops.operations()) {
+            if (op.type() == OperationType.COPY) {
+                copyCount++;
+                copied += op.length();
+            }
+        }
+        check(copyCount >= 3, "moved block copy count");
+        check(copied >= alpha.length + beta.length + gamma.length, "moved block copied bytes");
+        byte[] out = Patcher.apply(ops, new Registry(), base);
+        check(Arrays.equals(out, target), "moved block round");
+    }
+
+    private static void testLongAmbiguousPrefixRoundTrip() throws Exception {
+        byte[] base = bytes(repeat("AAAAAB", 24) + repeat("AAAAAC", 24) + "tail");
+        byte[] target = bytes(repeat("AAAAAC", 12) + "-pivot-" + repeat("AAAAAB", 12));
+        OperationList ops = Differ.diff(base, target, "base", "target");
+        byte[] out = Patcher.apply(ops, new Registry(), base);
+        check(Arrays.equals(out, target), "ambiguous prefix round");
+    }
     private static void testCompressor() throws Exception { byte[] raw = bytes("AAAAAAAABCDABCDZZZZZZ"); byte[] out = Compressor.decompressLiteral(Compressor.compressLiteral(raw)); check(Arrays.equals(raw, out), "compress"); }
     private static void testRegistryMissing() { try { new Registry().get("missing"); check(false, "missing"); } catch (RatchetException ex) { check(ex.status() == RatchetStatus.NOT_FOUND, "missing status"); } }
     private static void testWriteParse() throws Exception { OperationList list = new OperationList(); list.add(Operation.insert(bytes("abc"))); OperationList parsed = Parser.parse(Parser.write(list)); check(parsed.size() == 1, "parse write"); }
@@ -77,7 +108,7 @@ public final class RatchetTest {
         check(Arrays.equals(session.current(), bytes("def1XYZ")), "session mutate");
         session.restore("stable");
         check(Arrays.equals(session.current(), bytes("abcdef1")), "session restore");
-        check(session.appliedCount() == 2, "session count");
+        check(session.appliedCount() == 1, "session count");
     }
 
     private static void testStatefulDefensiveCopies() throws Exception {
@@ -97,5 +128,54 @@ public final class RatchetTest {
         session.applyNamed("v1");
         check(Arrays.equals(session.current(), bytes("abcd")), "session registry copy");
     }
+
+    private static void testStatefulRestoreMetadata() throws Exception {
+        StatefulPatchSession session = new StatefulPatchSession(bytes("abcdef"), "base");
+        OperationList toV1 = new OperationList();
+        toV1.setBaseVersion("base");
+        toV1.setTargetVersion("v1");
+        toV1.add(Operation.insert(bytes("1")));
+        session.apply(toV1);
+        session.checkpoint("v1-snapshot");
+        OperationList toV2 = new OperationList();
+        toV2.setBaseVersion("v1");
+        toV2.setTargetVersion("v2");
+        toV2.add(Operation.insert(bytes("2")));
+        session.apply(toV2);
+        session.restore("v1-snapshot");
+        check(Arrays.equals(session.current(), bytes("abcdef1")), "session restore snapshot bytes");
+        check("v1".equals(session.currentVersion()), "session restore version");
+        check(session.appliedCount() == 1, "session restore count");
+        OperationList toV3 = new OperationList();
+        toV3.setBaseVersion("v1");
+        toV3.setTargetVersion("v3");
+        toV3.add(Operation.delete(0, 2));
+        session.apply(toV3);
+        session.restore("v1-snapshot");
+        check(Arrays.equals(session.current(), bytes("abcdef1")), "session restore independent snapshot");
+        check("v1".equals(session.currentVersion()), "session restore independent version");
+    }
+    private static String repeat(String text, int count) {
+        StringBuilder out = new StringBuilder(text.length() * count);
+        for (int i = 0; i < count; i++) {
+            out.append(text);
+        }
+        return out.toString();
+    }
+
+    private static byte[] concat(byte[]... arrays) {
+        int length = 0;
+        for (byte[] array : arrays) {
+            length += array.length;
+        }
+        byte[] out = new byte[length];
+        int pos = 0;
+        for (byte[] array : arrays) {
+            System.arraycopy(array, 0, out, pos, array.length);
+            pos += array.length;
+        }
+        return out;
+    }
+
     private static byte[] bytes(String text) { return text.getBytes(java.nio.charset.StandardCharsets.UTF_8); }
 }

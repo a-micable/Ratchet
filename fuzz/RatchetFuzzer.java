@@ -66,14 +66,14 @@ public final class RatchetFuzzer {
             try {
                 switch ((op >>> 3) & 0x07) {
                     case 0:
-                        session.register(name(slot), Parser.write(generatedPatch(data, pos, slot)));
+                        session.register(name(slot), Parser.write(generatedPatch(data, pos, slot, (op >>> 6) & 0x03)));
                         pos = skipLiteral(data, pos);
                         break;
                     case 1:
                         session.applyNamed(name(slot));
                         break;
                     case 2:
-                        OperationList direct = generatedPatch(data, pos, slot);
+                        OperationList direct = generatedPatch(data, pos, slot, (op >>> 6) & 0x03);
                         pos = skipLiteral(data, pos);
                         session.apply(direct);
                         break;
@@ -84,26 +84,29 @@ public final class RatchetFuzzer {
                         session.restore(name(slot));
                         break;
                     case 5:
-                        session.reset(BASE, "base");
+                        session.reset(resetBase(slot, (op >>> 6) & 0x03), "base");
                         break;
                     case 6:
-                        session.current();
+                        byte[] current = session.current();
+                        if (current.length > 0) {
+                            current[0] ^= (byte) op;
+                        }
                         session.currentVersion();
                         session.appliedCount();
                         break;
                     default:
-                        session.register(name(slot), Parser.write(chainPatch(slot)));
+                        session.register(name(slot), Parser.write(chainPatch(slot, (op >>> 6) & 0x03)));
                         break;
                 }
             } catch (RatchetException ex) {
-                return;
+                continue;
             }
         }
     }
 
-    private static OperationList generatedPatch(byte[] data, int pos, int slot) {
+    private static OperationList generatedPatch(byte[] data, int pos, int slot, int variant) {
         OperationList list = new OperationList();
-        list.setBaseVersion("base");
+        list.setBaseVersion(variant == 0 ? "base" : name(Math.max(0, slot - 1)));
         list.setTargetVersion(name(slot));
         int length = pos < data.length ? ((data[pos] & 0x0f) + 1) : 1;
         byte[] literal = new byte[length];
@@ -114,23 +117,44 @@ public final class RatchetFuzzer {
         if ((slot & 1) == 0) {
             list.add(Operation.insert(literal));
             list.add(Operation.copy(0, Math.min(4, BASE.length)));
-        } else {
+        } else if (variant == 0) {
             list.add(Operation.copy(slot, Math.min(4 + slot, BASE.length - slot)));
             list.add(Operation.insert(literal));
             list.add(Operation.delete(0, Math.min(slot, BASE.length)));
+        } else {
+            int copyLength = Math.min(3 + slot, BASE.length - slot);
+            list.add(Operation.copy(slot, copyLength));
+            list.add(Operation.delete(0, Math.min(2 + variant, BASE.length)));
+            list.add(Operation.insert(literal));
+            list.add(Operation.copy(slot, copyLength));
         }
         return list;
     }
 
-    private static OperationList chainPatch(int slot) {
+    private static OperationList chainPatch(int slot, int variant) {
         OperationList list = new OperationList();
-        list.setBaseVersion("base");
+        list.setBaseVersion(variant == 0 ? "base" : name(Math.max(0, slot - 1)));
         list.setTargetVersion(name(slot));
         if (slot > 0) {
             list.add(Operation.chain(name(slot - 1)));
         }
+        if (variant > 1) {
+            list.add(Operation.chain(name((slot + 1) & 0x07)));
+        }
         list.add(Operation.insert(new byte[] { (byte) ('0' + slot) }));
         return list;
+    }
+
+    private static byte[] resetBase(int slot, int variant) {
+        if (variant == 0) {
+            return BASE;
+        }
+        int length = Math.min(BASE.length, 4 + slot + variant);
+        byte[] out = new byte[length];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = BASE[(slot + i) % BASE.length];
+        }
+        return out;
     }
 
     private static int skipLiteral(byte[] data, int pos) {
