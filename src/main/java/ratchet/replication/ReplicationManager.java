@@ -4,6 +4,7 @@ import ratchet.RatchetException;
 import ratchet.RatchetStatus;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 /**
  * Distributed replication system for consistency across nodes.
@@ -90,7 +91,7 @@ public class ReplicationManager {
     public boolean performLeaderElection() {
         List<ReplicationPeer> activePeers = peers.stream()
             .filter(p -> System.currentTimeMillis() - p.lastHeartbeat < 5000)
-            .toList();
+            .collect(Collectors.toList());
 
         String maxNodeId = nodeId;
         for (ReplicationPeer peer : activePeers) {

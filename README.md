@@ -2,10 +2,6 @@
 
 Ratchet is a private, original JVM/Java implementation of a versioned binary diff and patch format. It parses structured diff files, verifies CRC32 checksums, resolves named version chains through an in-memory registry, generates greedy binary diffs, applies patches, compresses literal insert data, and exposes a Java fuzz harness for ClusterFuzzLite/Jazzer-style JVM fuzzing.
 
-## Why Java
-
-Current submission platform accepts JVM, Rust, Swift, and Zig. C/C++ intake is closed, so Ratchet HEAD is Java-only. Historical commits remain in git history, but submitted source at HEAD uses JVM code and a JVM fuzz harness.
-
 ## Layout
 
 ```text

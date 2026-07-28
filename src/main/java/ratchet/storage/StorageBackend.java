@@ -18,7 +18,7 @@ public interface StorageBackend {
     long getSize(String key) throws RatchetException;
 }
 
-public class LocalFileStorageBackend implements StorageBackend {
+class LocalFileStorageBackend implements StorageBackend {
     private final Path basePath;
 
     public LocalFileStorageBackend(Path basePath) throws RatchetException {

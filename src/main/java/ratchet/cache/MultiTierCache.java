@@ -2,6 +2,7 @@ package ratchet.cache;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import ratchet.RatchetException;
 
 /**
@@ -83,12 +84,22 @@ public class MultiTierCache<K, V> {
     private void evictEntry() {
         if (l1Cache.isEmpty()) return;
 
-        K keyToEvict = switch (evictionPolicy) {
-            case LRU -> findLRUEntry();
-            case LFU -> findLFUEntry();
-            case FIFO -> findFIFOEntry();
-            case ARC -> findARCEntry();
-        };
+        K keyToEvict;
+        switch (evictionPolicy) {
+            case LRU:
+                keyToEvict = findLRUEntry();
+                break;
+            case LFU:
+                keyToEvict = findLFUEntry();
+                break;
+            case FIFO:
+                keyToEvict = findFIFOEntry();
+                break;
+            case ARC:
+            default:
+                keyToEvict = findARCEntry();
+                break;
+        }
 
         if (keyToEvict != null) {
             l1Cache.remove(keyToEvict);

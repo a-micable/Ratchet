@@ -7,10 +7,10 @@ import ratchet.RatchetException;
  * Plugin architecture for extensible functionality.
  * Supports dynamic loading of plugins with lifecycle management.
  */
-public interface RatchetPlugin {
+interface RatchetPlugin {
     String getName();
     String getVersion();
-    void initialize(PluginContext context) throws RatchetException;
+    void initialize(PluginManager.PluginContext context) throws RatchetException;
     void shutdown() throws RatchetException;
 }
 
