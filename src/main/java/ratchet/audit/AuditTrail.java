@@ -3,6 +3,7 @@ package ratchet.audit;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 /**
  * Comprehensive audit trail system for all operations.
@@ -61,13 +62,13 @@ public class AuditTrail {
             .filter(e -> (userId == null || e.userId.equals(userId)) &&
                         (operation == null || e.operation.equals(operation)))
             .limit(limit)
-            .toList();
+            .collect(Collectors.toList());
     }
 
     public List<AuditEvent> getEventsSince(Instant since) {
         return events.stream()
             .filter(e -> e.timestamp.isAfter(since))
-            .toList();
+            .collect(Collectors.toList());
     }
 
     public int eventCount() {

@@ -8,6 +8,7 @@ public final class Resolver {
         output.setBaseVersion(input.baseVersion());
         output.setTargetVersion(input.targetVersion());
         output.setFlags(input.flags());
+        output.setReplayBudget(input.replayBudget());
         resolveInto(input, registry, output, 0);
         return output;
     }

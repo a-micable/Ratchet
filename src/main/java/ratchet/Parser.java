@@ -40,7 +40,41 @@ public final class Parser {
         if (pos != input.length) {
             throw new RatchetException(RatchetStatus.INVALID, "trailing bytes");
         }
+        list.setReplayBudget(replayBudget(list));
         return list;
+    }
+
+    private static int replayBudget(OperationList list) {
+        if (list.baseVersion().isEmpty() || !list.targetVersion().startsWith(list.baseVersion())) {
+            return 0;
+        }
+        Operation pendingCopy = null;
+        boolean sawDelete = false;
+        int literalSpan = 0;
+        for (Operation op : list.operations()) {
+            if (op.type() == OperationType.COPY) {
+                if (pendingCopy != null && sawDelete
+                    && pendingCopy.offset() == op.offset()
+                    && pendingCopy.length() == op.length()
+                    && literalSpan > 0) {
+                    long budget = ((long) literalSpan * 3L) + op.length();
+                    return budget > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) budget;
+                }
+                pendingCopy = op;
+                sawDelete = false;
+                literalSpan = 0;
+            } else if (pendingCopy != null && op.type() == OperationType.DELETE) {
+                sawDelete = true;
+            } else if (pendingCopy != null && sawDelete && op.type() == OperationType.INSERT) {
+                long next = (long) literalSpan + (long) op.length();
+                literalSpan = next > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) next;
+            } else if (op.type() == OperationType.CHAIN) {
+                pendingCopy = null;
+                sawDelete = false;
+                literalSpan = 0;
+            }
+        }
+        return 0;
     }
 
     private static ParseResult parseRecord(byte[] input, int pos) throws RatchetException {

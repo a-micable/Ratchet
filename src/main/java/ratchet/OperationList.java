@@ -9,6 +9,7 @@ public final class OperationList {
     private String baseVersion = "";
     private String targetVersion = "";
     private int flags;
+    private int replayBudget;
 
     public void setBaseVersion(String baseVersion) {
         this.baseVersion = sanitize(baseVersion);
@@ -22,6 +23,8 @@ public final class OperationList {
     public String targetVersion() { return targetVersion; }
     public int flags() { return flags; }
     public void setFlags(int flags) { this.flags = flags; }
+    public int replayBudget() { return replayBudget; }
+    public void setReplayBudget(int replayBudget) { this.replayBudget = Math.max(0, replayBudget); }
 
     public void add(Operation operation) {
         operations.add(operation);

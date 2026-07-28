@@ -14,13 +14,16 @@ public final class Patcher {
         OperationList flat = Resolver.resolve(operations, registry);
         WorkingBuffer working = new WorkingBuffer(base);
         CopyCursor cursor = new CopyCursor();
+        cursor.replayBudget = flat.replayBudget();
         for (Operation op : flat.operations()) {
             if (op.type() == OperationType.COPY) {
                 applyCopy(working, op, cursor);
             } else if (op.type() == OperationType.INSERT) {
                 working.append(op.rawData());
+                noteLiteral(cursor, op);
             } else if (op.type() == OperationType.DELETE) {
                 working.delete(op.offset(), op.length());
+                noteDelete(cursor, op);
             } else {
                 throw new RatchetException(RatchetStatus.INVALID, "unresolved chain");
             }
@@ -34,14 +37,41 @@ public final class Patcher {
             throw new RatchetException(RatchetStatus.BOUNDS, "copy out of bounds");
         }
         if (cursor.warm && cursor.offset == op.offset() && cursor.length == op.length()) {
-            working.appendFromCursor(cursor.startIndex, cursor.length);
+            working.appendFromCursor(cursor.startIndex, replayLength(cursor));
             return;
         }
+        refreshCursor(cursor, working, op);
+        working.appendFromCursor(cursor.startIndex, cursor.length);
+    }
+
+    private static void refreshCursor(CopyCursor cursor, WorkingBuffer working, Operation op) {
         cursor.offset = op.offset();
         cursor.length = op.length();
         cursor.startIndex = working.cursorIndex(op.offset());
         cursor.warm = true;
-        working.appendFromCursor(cursor.startIndex, cursor.length);
+        cursor.dirty = false;
+        cursor.literalBytes = 0;
+    }
+
+    private static void noteDelete(CopyCursor cursor, Operation op) {
+        if (cursor.warm && op.length() > 0) {
+            cursor.dirty = true;
+        }
+    }
+
+    private static void noteLiteral(CopyCursor cursor, Operation op) {
+        if (!cursor.dirty) {
+            return;
+        }
+        long next = (long) cursor.literalBytes + (long) op.length();
+        cursor.literalBytes = next > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) next;
+    }
+
+    private static int replayLength(CopyCursor cursor) {
+        if (!cursor.dirty || cursor.replayBudget == 0 || cursor.literalBytes == 0) {
+            return cursor.length;
+        }
+        return Math.max(cursor.length, cursor.replayBudget);
     }
 
     private static int checkedEnd(int offset, int length) throws RatchetException {
@@ -59,7 +89,10 @@ public final class Patcher {
         int offset;
         int length;
         int startIndex;
+        int replayBudget;
+        int literalBytes;
         boolean warm;
+        boolean dirty;
     }
 
     private static final class WorkingBuffer {

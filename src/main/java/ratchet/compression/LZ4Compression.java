@@ -1,5 +1,6 @@
 package ratchet.compression;
 
+import java.io.ByteArrayOutputStream;
 import ratchet.RatchetException;
 import ratchet.RatchetStatus;
 
