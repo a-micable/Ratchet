@@ -1,6 +1,6 @@
 # Ratchet
 
-Ratchet is a private, original JVM/Java implementation of a versioned binary diff and patch format. It parses structured diff files, verifies CRC32 checksums, resolves named version chains through an in-memory registry, generates greedy binary diffs, applies patches, compresses literal insert data, and exposes a Java fuzz harness for ClusterFuzzLite/Jazzer-style JVM fuzzing.
+Ratchet is a private, original JVM/Java implementation of a versioned binary diff and patch format. It parses structured diff files, verifies CRC32 checksums, resolves named version chains through in-memory registries, generates greedy binary diffs, applies patches, compresses literal insert data, and exposes JVM fuzzing surfaces for both one-shot parsing and longer lifecycle/stateful patch sessions.
 
 ## Layout
 
@@ -34,10 +34,23 @@ All integers are little-endian 32-bit values.
 - `Registry`: maps version names to diff byte streams, entirely in memory.
 - `Resolver`: recursively expands chain operations into flat ordered patch operations.
 - `Patcher`: applies copy, insert, and delete operations to a working buffer after resolver flattening.
+- `StatefulPatchSession`: keeps an evolving current document, named registry entries, checkpoints, and version metadata across multiple patch calls.
 - `Differ`: deterministic greedy diff generator using longest base substring matches.
 - `Compressor`: run-length and 4-byte back-reference compressor for insert literals.
 - `RatchetCli`: local command line interface.
-- `RatchetFuzzer`: JVM fuzz harness that parses input, populates registry entries from chain operations, and drives patch execution.
+- `RatchetFuzzer`: JVM fuzz harness that either parses raw diffs or interprets command streams that mutate a long-lived patch session.
+
+## Stateful Bug Model
+
+Ratchet intentionally favors bugs that require lifecycle context rather than isolated malformed records. The most interesting paths now involve sequences such as:
+
+- register a named diff, apply it through a chain, checkpoint the result, mutate again, then restore
+- reuse a warmed copy cursor after deletes and inserts have changed the working buffer
+- resolve nested chains whose registry entries were installed by earlier operations
+- reset a session while keeping enough registry/checkpoint history to exercise stale-state assumptions
+- query current state repeatedly between mutations to expose defensive-copy and aliasing mistakes
+
+This gives fuzzing and review more room to find ordering bugs, stale snapshots, bad lifecycle transitions, and state aliasing issues.
 
 ## Build
 
@@ -68,7 +81,7 @@ Tests cover round trips, CRC rejection, copy/insert/delete operations, mixed ope
 make seeds
 ```
 
-Seed corpus includes insert-only, copy-only, mixed sequence, one-level chain, and two-level chain examples. Mixed sequence seeds are intentionally stateful: they warm copy state, mutate working state, grow storage, then repeat copy.
+Seed corpus includes insert-only, copy-only, mixed sequence, one-level chain, two-level chain, and command-stream stateful session examples. Mixed sequence seeds are intentionally stateful: they warm copy state, mutate working state, grow storage, then repeat copy.
 
 ## Fuzz Harness
 
@@ -78,7 +91,7 @@ Seed corpus includes insert-only, copy-only, mixed sequence, one-level chain, an
 public static void fuzzerTestOneInput(byte[] data)
 ```
 
-Harness behavior:
+Raw diff behavior:
 
 1. parse raw input as Ratchet diff
 2. ignore invalid parse/CRC errors
@@ -86,6 +99,8 @@ Harness behavior:
 4. apply operations to fixed base buffer
 5. ignore expected RatchetException failures
 6. allow unexpected runtime failures to surface to fuzzer
+
+Inputs that do not start with the Ratchet magic header are treated as command streams. Those commands register generated patches, apply named versions, apply direct operation lists, checkpoint and restore session state, reset the current document, and query session metadata. This path is intentionally lifecycle-heavy.
 
 The harness does not write files, open sockets, or call process exit.
 
@@ -113,6 +128,15 @@ OperationList parsed = Parser.parse(diff);
 OperationList flat = Resolver.resolve(parsed, registry);
 ```
 
+Stateful session:
+
+```java
+StatefulPatchSession session = new StatefulPatchSession(base, "base");
+session.register("v1", diff);
+byte[] current = session.applyNamed("v1");
+session.checkpoint("stable");
+```
+
 ## Error Model
 
 Core library throws `RatchetException` with `RatchetStatus`:
@@ -122,12 +146,21 @@ Core library throws `RatchetException` with `RatchetStatus`:
 - `BOUNDS`
 - `NOT_FOUND`
 - `DEPTH`
+- `COMPRESSION_ERROR`
+- `SIZE_EXCEEDED`
+- `UNSUPPORTED`
+- `INTERNAL`
+- `IO_ERROR`
+- `AUTHENTICATION_FAILED`
+- `AUTHORIZATION_FAILED`
+- `TIMEOUT`
+- `CONCURRENT_MODIFICATION`
 
 Fuzz harness catches these expected domain failures and returns. Runtime exceptions remain visible to fuzzing.
 
 ## Security Notes
 
-Ratchet treats diff bytes as untrusted. Parser checks structure and CRC before patching. Resolver caps recursion depth. Patcher validates normal operation bounds. Fuzzing exercises the full parse-resolve-patch lifecycle, not only record decoding.
+Ratchet treats diff bytes and command streams as untrusted. Parser checks structure and CRC before patching. Resolver caps recursion depth. Patcher validates normal operation bounds. Stateful session APIs defensively copy stored and returned byte arrays. Fuzzing exercises parse-resolve-patch lifecycle and cross-call state transitions, not only record decoding.
 
 ## Current Validation
 

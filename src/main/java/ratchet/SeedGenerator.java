@@ -44,6 +44,23 @@ public final class SeedGenerator {
         chainTwo.add(Operation.chain("chain_child_two_b"));
         chainTwo.add(Operation.insert("END".getBytes("UTF-8")));
         write(dir, "chain_two.bin", Parser.write(chainTwo));
+        write(dir, "stateful_register_apply_checkpoint.bin", new byte[] {
+            0x00, 0x03, 'a', 'b', 'c',
+            0x08,
+            0x18,
+            0x11, 0x02, 'x', 'y',
+            0x19,
+            0x20
+        });
+        write(dir, "stateful_chain_restore_reset.bin", new byte[] {
+            0x3f,
+            0x3e,
+            0x16,
+            0x18,
+            0x26,
+            0x2d,
+            0x08
+        });
     }
 
     private static byte[] repeat(byte value, int count) {

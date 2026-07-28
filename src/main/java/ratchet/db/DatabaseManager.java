@@ -2,7 +2,6 @@ package ratchet.db;
 
 import ratchet.RatchetException;
 import ratchet.RatchetStatus;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
@@ -40,7 +39,7 @@ public class DatabaseManager {
         }
     }
 
-    private void initializeSchema() throws SQLException {
+    private void initializeSchema() throws SQLException, RatchetException {
         try (Connection conn = getConnection()) {
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute("CREATE TABLE IF NOT EXISTS versions (" +

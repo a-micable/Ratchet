@@ -21,6 +21,8 @@ public final class RatchetTest {
         testCompressor();
         testRegistryMissing();
         testWriteParse();
+        testStatefulSession();
+        testStatefulDefensiveCopies();
         if (failures != 0) {
             throw new AssertionError(failures + " failures");
         }
@@ -55,5 +57,45 @@ public final class RatchetTest {
     private static void testCompressor() throws Exception { byte[] raw = bytes("AAAAAAAABCDABCDZZZZZZ"); byte[] out = Compressor.decompressLiteral(Compressor.compressLiteral(raw)); check(Arrays.equals(raw, out), "compress"); }
     private static void testRegistryMissing() { try { new Registry().get("missing"); check(false, "missing"); } catch (RatchetException ex) { check(ex.status() == RatchetStatus.NOT_FOUND, "missing status"); } }
     private static void testWriteParse() throws Exception { OperationList list = new OperationList(); list.add(Operation.insert(bytes("abc"))); OperationList parsed = Parser.parse(Parser.write(list)); check(parsed.size() == 1, "parse write"); }
+    private static void testStatefulSession() throws Exception {
+        StatefulPatchSession session = new StatefulPatchSession(bytes("abcdef"), "base");
+        OperationList toV1 = new OperationList();
+        toV1.setBaseVersion("base");
+        toV1.setTargetVersion("v1");
+        toV1.add(Operation.insert(bytes("1")));
+        session.register("v1", Parser.write(toV1));
+        session.applyNamed("v1");
+        check(Arrays.equals(session.current(), bytes("abcdef1")), "session named apply");
+        check("v1".equals(session.currentVersion()), "session version");
+        session.checkpoint("stable");
+        OperationList mutate = new OperationList();
+        mutate.setBaseVersion("v1");
+        mutate.setTargetVersion("v2");
+        mutate.add(Operation.delete(0, 3));
+        mutate.add(Operation.insert(bytes("XYZ")));
+        session.apply(mutate);
+        check(Arrays.equals(session.current(), bytes("def1XYZ")), "session mutate");
+        session.restore("stable");
+        check(Arrays.equals(session.current(), bytes("abcdef1")), "session restore");
+        check(session.appliedCount() == 2, "session count");
+    }
+
+    private static void testStatefulDefensiveCopies() throws Exception {
+        byte[] base = bytes("abc");
+        StatefulPatchSession session = new StatefulPatchSession(base, "base");
+        base[0] = 'z';
+        check(Arrays.equals(session.current(), bytes("abc")), "session base copy");
+        byte[] current = session.current();
+        current[1] = 'z';
+        check(Arrays.equals(session.current(), bytes("abc")), "session current copy");
+        OperationList toV1 = new OperationList();
+        toV1.setTargetVersion("v1");
+        toV1.add(Operation.insert(bytes("d")));
+        byte[] diff = Parser.write(toV1);
+        session.register("v1", diff);
+        diff[0] = 0;
+        session.applyNamed("v1");
+        check(Arrays.equals(session.current(), bytes("abcd")), "session registry copy");
+    }
     private static byte[] bytes(String text) { return text.getBytes(java.nio.charset.StandardCharsets.UTF_8); }
 }
