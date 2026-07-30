@@ -100,7 +100,7 @@ public final class Parser {
         if (type == OperationType.INSERT) {
             int length = Format.readU32(input, pos);
             pos += 4;
-            if (length < 0 || pos + length + 4 > input.length) {
+            if (length < 0 || length > input.length - pos - 4) {
                 throw new RatchetException(RatchetStatus.INVALID, "truncated insert");
             }
             byte[] data = Arrays.copyOfRange(input, pos, pos + length);

@@ -23,6 +23,7 @@ public final class RatchetTest {
         testCompressor();
         testRegistryMissing();
         testWriteParse();
+        testOversizedInsertLengthRejected();
         testStatefulSession();
         testStatefulDefensiveCopies();
         testStatefulRestoreMetadata();
@@ -88,6 +89,25 @@ public final class RatchetTest {
     private static void testCompressor() throws Exception { byte[] raw = bytes("AAAAAAAABCDABCDZZZZZZ"); byte[] out = Compressor.decompressLiteral(Compressor.compressLiteral(raw)); check(Arrays.equals(raw, out), "compress"); }
     private static void testRegistryMissing() { try { new Registry().get("missing"); check(false, "missing"); } catch (RatchetException ex) { check(ex.status() == RatchetStatus.NOT_FOUND, "missing status"); } }
     private static void testWriteParse() throws Exception { OperationList list = new OperationList(); list.add(Operation.insert(bytes("abc"))); OperationList parsed = Parser.parse(Parser.write(list)); check(parsed.size() == 1, "parse write"); }
+    private static void testOversizedInsertLengthRejected() throws Exception {
+        ByteSink sink = new ByteSink();
+        sink.write(Format.MAGIC);
+        Format.writeU32(sink, Format.VERSION);
+        Format.writeU32(sink, 0);
+        Format.writeName(sink, "base");
+        Format.writeName(sink, "target");
+        Format.writeU32(sink, 1);
+        byte[] headerPrefix = sink.toByteArray();
+        Format.writeU32(sink, Crc32.compute(headerPrefix));
+        sink.write((byte) OperationType.INSERT.tag());
+        Format.writeU32(sink, Integer.MAX_VALUE);
+        try {
+            Parser.parse(sink.toByteArray());
+            check(false, "oversized insert rejected");
+        } catch (RatchetException ex) {
+            check(ex.status() == RatchetStatus.INVALID, "oversized insert status");
+        }
+    }
     private static void testStatefulSession() throws Exception {
         StatefulPatchSession session = new StatefulPatchSession(bytes("abcdef"), "base");
         OperationList toV1 = new OperationList();
